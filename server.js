@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 const httpServer = createServer(app);
 
-const io = new Server(httpServer, { cors: { origin: "http://localhost:3000,https://gurusharan.vercel.app/" } });
+const io = new Server(httpServer, { cors: { origin:["http://localhost:3000", "https://gurusharan.vercel.app"]  } });
 const SECRET = "supersecret";
 const onlineUsers = new Map();
 
