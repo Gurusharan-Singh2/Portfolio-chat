@@ -25,7 +25,7 @@ io.use((socket, next) => {
   try {
     const decoded = jwt.verify(token, SECRET);
     socket.user = decoded;
-    onlineUsers.set(decoded.id, socket.id);
+    onlineUsers.set(String(decoded.id), socket.id);
     next();
   } catch {
     next(new Error("Authentication error"));
@@ -37,44 +37,70 @@ const ADMIN_ID = "6940e8fb7e042f29dcf61df0";
 io.on("connection", async (socket) => {
   console.log("User connected:", socket.user.email);
 
-  const history = await Message.find({
-    $or: [
-      { senderId: socket.user.id, recipientId: ADMIN_ID },
-      { senderId: ADMIN_ID, recipientId: socket.user.id }
-    ],
-  })
-    .sort({ timestamp: 1 })
-    .limit(50)
-    .lean();
-  socket.emit("chatHistory", history);
+  // Only send chat history for non-admin users chatting with admin
+  if (String(socket.user.id) !== String(ADMIN_ID)) {
+    try {
+      const userObjId = new mongoose.Types.ObjectId(socket.user.id);
+      const adminObjId = new mongoose.Types.ObjectId(ADMIN_ID);
+      const history = await Message.find({
+        $or: [
+          { senderId: userObjId, recipientId: adminObjId },
+          { senderId: adminObjId, recipientId: userObjId }
+        ],
+      })
+        .sort({ timestamp: 1 })
+        .limit(50)
+        .lean();
+      socket.emit("chatHistory", history);
+    } catch (err) {
+      console.error("Error fetching chat history:", err);
+    }
+  }
 
   socket.on("privateMessage", async ({ recipientId, text }) => {
     if (!recipientId || !text) return;
 
+    // Convert IDs to ObjectId for proper MongoDB storage
+    let senderObjId, recipientObjId;
+    try {
+      senderObjId = new mongoose.Types.ObjectId(socket.user.id);
+      recipientObjId = new mongoose.Types.ObjectId(recipientId);
+    } catch (err) {
+      console.error("Invalid ObjectId:", err);
+      return;
+    }
+
     const msg = await Message.create({
-      senderId: socket.user.id,
-      recipientId,                 
+      senderId: senderObjId,
+      recipientId: recipientObjId,                 
       senderEmail: socket.user.email,
       text,
       timestamp: new Date(),
     });
 
-    const recipientSocketId = onlineUsers.get(recipientId);
-    if (recipientSocketId) io.to(recipientSocketId).emit("privateMessage", msg);
+    // Convert to plain object for socket emission
+    const msgObj = msg.toObject ? msg.toObject() : msg;
 
-    socket.emit("privateMessage", msg);
+    // Send to recipient if online
+    const recipientSocketId = onlineUsers.get(String(recipientId));
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("privateMessage", msgObj);
+    }
+
+    // Also send back to sender for confirmation
+    socket.emit("privateMessage", msgObj);
   });
 
   socket.on("typing", ({ recipientId }) => {
     if (!recipientId) return;
-    const recipientSocketId = onlineUsers.get(recipientId);
+    const recipientSocketId = onlineUsers.get(String(recipientId));
     if (recipientSocketId) {
       io.to(recipientSocketId).emit("typing", { senderId: socket.user.id });
     }
   });
 
   socket.on("disconnect", () => {
-    onlineUsers.delete(socket.user.id);
+    onlineUsers.delete(String(socket.user.id));
     console.log("User disconnected:", socket.user.email);
   });
 });
