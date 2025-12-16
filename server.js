@@ -31,7 +31,7 @@ io.use((socket, next) => {
     next(new Error("Authentication error"));
   }
 });
-const ADMIN_ID = "68d25ce46ae71dccc1483c27"; 
+const ADMIN_ID = "6940e8fb7e042f29dcf61df0"; 
 
 
 io.on("connection", async (socket) => {
