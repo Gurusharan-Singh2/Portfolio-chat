@@ -35,7 +35,8 @@ const ADMIN_ID = "6940e8fb7e042f29dcf61df0";
 
 
 io.on("connection", async (socket) => {
-  console.log("User connected:", socket.user.email);
+  // Broadcast online status
+  io.emit("userStatus", { userId: socket.user.id, status: "online" });
 
   // Only send chat history for non-admin users chatting with admin
   if (String(socket.user.id) !== String(ADMIN_ID)) {
@@ -57,8 +58,14 @@ io.on("connection", async (socket) => {
     }
   }
 
-  socket.on("privateMessage", async ({ recipientId, text }) => {
+  socket.on("privateMessage", async ({ recipientId, text, clientId }) => {
     if (!recipientId || !text) return;
+
+    // Basic validation: recipientId must look like a Mongo ObjectId string
+    if (typeof recipientId !== "string" || !/^[0-9a-fA-F]{24}$/.test(recipientId)) {
+      console.error("Invalid recipientId format:", recipientId);
+      return;
+    }
 
     // Convert IDs to ObjectId for proper MongoDB storage
     let senderObjId, recipientObjId;
@@ -80,6 +87,10 @@ io.on("connection", async (socket) => {
 
     // Convert to plain object for socket emission
     const msgObj = msg.toObject ? msg.toObject() : msg;
+    // Attach clientId (not stored in DB) so clients can reconcile optimistic messages
+    if (clientId) {
+      msgObj.clientId = clientId;
+    }
 
     // Send to recipient if online
     const recipientSocketId = onlineUsers.get(String(recipientId));
@@ -99,9 +110,18 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+  socket.on("stopTyping", ({ recipientId }) => {
+    if (!recipientId) return;
+    const recipientSocketId = onlineUsers.get(String(recipientId));
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("stopTyping", { senderId: socket.user.id });
+    }
+  });
+
+  socket.on("disconnect", (reason) => {
     onlineUsers.delete(String(socket.user.id));
-    console.log("User disconnected:", socket.user.email);
+    io.emit("userStatus", { userId: socket.user.id, status: "offline" });
+    console.log(`User disconnected: ${socket.user.email} Reason: ${reason}`);
   });
 });
 httpServer.listen(4000, () => console.log("Chat server running on 4000"));
