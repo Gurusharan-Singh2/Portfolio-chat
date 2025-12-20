@@ -139,7 +139,7 @@ io.on("connection", async (socket) => {
 
 /* ------------------ KEEP ALIVE FUNCTION ------------------ */
 function keepServerAlive() {
-  if (process.env.NODE_ENV !== "production") return;
+ 
 
   const URL = process.env.RENDER_URL; // e.g. https://your-app.onrender.com
 
@@ -150,7 +150,7 @@ function keepServerAlive() {
     } catch (err) {
       console.error("Keep-alive error:", err.message);
     }
-  }, 5 * 60 * 1000); // 5 minutes
+  }, 10 * 60 * 1000); // 5 minutes
 }
 
 /* ------------------ START SERVER ------------------ */
